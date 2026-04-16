@@ -1,4 +1,5 @@
-.env
 node_modules
+node_modules_2
+.env
 *.db
 sessions.db
