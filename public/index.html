@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard · ModSafe</title>
+<style>
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif; }
+  :root {
+    --bg: #f8fafc; --panel: rgba(255,255,255,0.92); --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
+    --blue: #2563eb; --blue2: #1d4ed8; --soft: #eff6ff; --shadow: 0 18px 40px rgba(15,23,42,0.08);
+    --moderation: #2563eb; --off: #64748b;
+  }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    background: radial-gradient(circle at top left, rgba(37,99,235,0.06), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(37,99,235,0.04), transparent 25%),
+                linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  }
+  .topbar {
+    position: sticky; top: 0; z-index: 20; background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(14px); border-bottom: 1px solid rgba(226,232,240,0.85);
+  }
+  .topbar-inner {
+    width: min(1280px, calc(100vw - 32px)); margin: 0 auto; padding: 14px 0;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand img { height: 38px; width: auto; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--blue); }
+  .brand p { margin: 0; color: var(--muted); font-size: 12px; }
+  .top-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn {
+    border: none; border-radius: 12px; padding: 11px 15px; font-weight: 800; cursor: pointer;
+    transition: 0.2s ease; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--blue), var(--blue2)); color: white;
+    box-shadow: 0 14px 30px rgba(37,99,235,0.18);
+  }
+  .btn.primary:hover { transform: translateY(-1px); }
+  .btn.ghost { background: white; color: var(--text); border: 1px solid var(--line); }
+  .btn.ghost:hover { transform: translateY(-1px); border-color: #cbd5e1; }
+  .btn.mode-btn {
+    background: #fff; color: var(--text); border: 1px solid var(--line); padding: 9px 14px; min-width: 92px;
+  }
+  .btn.mode-btn.active.moderation { background: rgba(37,99,235,0.12); color: var(--moderation); border-color: rgba(37,99,235,0.22); }
+  .btn.mode-btn.active.off { background: rgba(100,116,139,0.12); color: var(--off); border-color: rgba(100,116,139,0.22); }
+  .container { width: min(1280px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 40px; }
+  .hero { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 16px; margin-bottom: 16px; }
+  .card {
+    background: var(--panel); border: 1px solid rgba(226,232,240,0.95); border-radius: 20px;
+    box-shadow: var(--shadow); padding: 20px; animation: rise 0.45s ease both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.6; } 100% { transform: scale(1); opacity: 1; } }
+  .welcome h2 { margin: 0 0 8px; font-size: 30px; letter-spacing: -0.04em; }
+  .welcome p { margin: 0; color: var(--muted); line-height: 1.7; }
+  .badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .badge { padding: 8px 12px; border-radius: 999px; background: var(--soft); border: 1px solid #dbeafe; color: #1e40af; font-size: 13px; font-weight: 800; }
+  .side-info { display: grid; gap: 12px; }
+  .small-title { font-size: 13px; color: var(--muted); letter-spacing: 0.02em; text-transform: uppercase; font-weight: 800; }
+  .api-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; word-break: break-all; }
+  .api-value { font-size: 14px; line-height: 1.6; color: #0f172a; }
+  .copy-btn { white-space: nowrap; background: #eef2ff; color: #1e3a8a; border: 1px solid #dbeafe; }
+  .copy-btn:hover { background: #e0e7ff; }
+  .usage.good { border-color: #bbf7d0; }
+  .usage.warn { border-color: #fde68a; background: #fffbeb; }
+  .metric-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
+  .metric { background: rgba(255,255,255,0.94); border: 1px solid rgba(226,232,240,0.95); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+  .metric .label { color: var(--muted); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric .value { margin-top: 8px; font-size: 28px; font-weight: 900; letter-spacing: -0.04em; }
+  .metric .sub { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .toolbar .btn { padding: 10px 14px; }
+  .table-card { overflow: hidden; padding: 0; }
+  .table-head { padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .table-head h3 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+  .table-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 14px 18px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top; }
+  th { background: #fafcff; color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { font-size: 14px; }
+  tbody tr:hover { background: #fafcff; }
+  .empty-state { text-align: center; padding: 34px 20px; color: var(--muted); }
+  .abuse { color: #dc2626; font-weight: 900; }
+  .spam { color: #d97706; font-weight: 900; }
+  .safe { color: #16a34a; font-weight: 900; }
+  .test-card { margin-bottom: 16px; }
+  .status-pill { padding: 8px 12px; border-radius: 999px; background: #eff6ff; border: 1px solid #dbeafe; color: #1d4ed8; font-size: 13px; font-weight: 800; }
+  textarea, input[type="text"] {
+    width: 100%; min-height: 150px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line);
+    outline: none; resize: vertical; font-size: 15px; line-height: 1.6; background: linear-gradient(180deg, #ffffff, #fbfdff);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+  }
+  input[type="text"] { min-height: auto; resize: none; }
+  textarea:focus, input[type="text"]:focus { border-color: #93c5fd; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); }
+  .tester-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 14px; }
+  .mini-panel { border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: #fafcff; margin-top: 14px; }
+  .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 999px; background: white; border: 1px solid #dbeafe; color: #1e3a8a; font-size: 13px; font-weight: 700; }
+  .chip button { border: none; background: transparent; color: #dc2626; font-weight: 900; cursor: pointer; padding: 0; line-height: 1; }
+  .code-box { width: 100%; min-height: 190px; resize: none; white-space: pre; overflow: auto; font-size: 13px; line-height: 1.6; background: #0f172a; color: #e2e8f0; border: 1px solid #1e293b; }
+  .section-title { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
+  .section-sub { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .mode-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .mode-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .mode-pill { padding: 8px 12px; border-radius: 999px; background: #eff6ff; border: 1px solid #dbeafe; color: #1d4ed8; font-size: 13px; font-weight: 800; }
+  .action-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; flex-wrap: wrap; }
+  .action-row label { font-weight: 800; font-size: 14px; }
+  .action-row select { padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: white; }
+  @media (max-width: 980px) { .hero, .metric-grid, .tester-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) {
+    .topbar-inner { flex-direction: column; align-items: flex-start; }
+    .container { width: min(1280px, calc(100vw - 20px)); }
+    th, td { padding: 12px 14px; }
+    .action-row { flex-direction: column; align-items: stretch; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img src="ModSafe.jpg" alt="ModSafe Logo" style="height:38px;" />
+        <div>
+          <h1>ModSafe</h1>
+          <p>Indian Language Moderation</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <a class="btn ghost" href="pricing.html">Pricing</a>
+        <a class="btn ghost" href="analytics.html">📊 Advanced Analytics</a>
+        <button class="btn primary" onclick="refreshAll()">Refresh</button>
+        <button class="btn ghost" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="hero">
+      <div class="card welcome" id="profileCard">
+        <h2>Loading account…</h2>
+        <p>Fetching your dashboard details.</p>
+      </div>
+      <div class="side-info">
+        <div class="card">
+          <div class="small-title">API Key</div>
+          <div class="api-box" style="margin-top: 10px;">
+            <div class="api-value" id="apiKeyValue">Loading…</div>
+            <button class="btn copy-btn" onclick="copyKey()">Copy</button>
+          </div>
+        </div>
+        <div class="card usage" id="usageCard">
+          <div class="small-title">Usage</div>
+          <div class="value" id="usageValue">Loading…</div>
+          <div class="sub" id="usageSub">Your free plan includes 1,000 checks.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric"><div class="label">Total Checks</div><div class="value" id="totalMetric">0</div><div class="sub">All checks saved for this account.</div></div>
+      <div class="metric"><div class="label">Abuse</div><div class="value" id="abuseMetric" style="color:#dc2626;">0</div><div class="sub">Abusive and harmful text detected.</div></div>
+      <div class="metric"><div class="label">Spam</div><div class="value" id="spamMetric" style="color:#d97706;">0</div><div class="sub">Promotional or spam-like text detected.</div></div>
+      <div class="metric"><div class="label">Remaining</div><div class="value" id="remainingMetric" style="color:var(--blue);">1000</div><div class="sub">Free plan balance before upgrade.</div></div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn primary" onclick="loadData()">Load All</button>
+      <button class="btn ghost" onclick="loadFlagged()">Show Flagged Only</button>
+      <a class="btn ghost" href="pricing.html">Upgrade Plan</a>
+    </div>
+
+    <div class="card test-card">
+      <div class="mode-status">
+        <div><h3 class="section-title">Test Moderation</h3><p class="section-sub">This tester is free and does not consume your plan usage.</p></div>
+        <div class="status-pill" id="playgroundStatus">Free Playground · Moderation</div>
+      </div>
+      <div class="mode-row">
+        <button class="btn mode-btn active moderation" id="modeModerationBtn" onclick="setModerationMode('moderation')">Moderation</button>
+        <button class="btn mode-btn" id="modeOffBtn" onclick="setModerationMode('off')">Off</button>
+      </div>
+      <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div class="mode-pill">Current mode: <span id="modeValue">Moderation</span></div>
+        <div class="section-sub" id="modeSub">Uses both rules files plus AI.</div>
+      </div>
+      <div class="tester-grid" style="margin-top: 14px;">
+        <div>
+          <textarea id="testInput" placeholder="Type something to test moderation..."></textarea>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+            <button class="btn primary" onclick="testModeration()" style="width:auto;">Check</button>
+            <button class="btn ghost" onclick="fillExample('you are an idiot')" style="width:auto;">Example 1</button>
+            <button class="btn ghost" onclick="fillExample('buy now free money click here')" style="width:auto;">Example 2</button>
+            <button class="btn ghost" onclick="clearTester()" style="width:auto;">Clear</button>
+          </div>
+          <!-- Custom Words panel -->
+          <div class="mini-panel">
+            <div class="small-title">Custom banned words</div>
+            <div style="margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.6;">Add community-specific words or phrases. Separate with commas.</div>
+            <input id="customWordsInput" type="text" placeholder="lodu, bc, mc" style="min-height:auto; margin-top: 10px;" />
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+              <button class="btn primary" onclick="saveCustomWords()" style="width:auto;">Save Words</button>
+              <button class="btn ghost" onclick="loadCustomWords()" style="width:auto;">Reload</button>
+              <button class="btn ghost" onclick="clearCustomWords()" style="width:auto;">Clear All</button>
+            </div>
+            <div id="customWordsStatus" style="margin-top: 10px; font-size: 13px; color: var(--muted);"></div>
+            <div id="customWordsList" class="chip-list"></div>
+          </div>
+          <!-- NEW: Moderation Actions panel -->
+          <div class="mini-panel">
+            <div class="small-title">Moderation Actions</div>
+            <div class="action-row">
+              <label>When abuse is detected:</label>
+              <select id="abuseActionSelect">
+                <option value="mask">Mask (replace with ***)</option>
+                <option value="remove">Remove word</option>
+                <option value="replace">Replace with [removed]</option>
+                <option value="block">Block the whole request</option>
+              </select>
+            </div>
+            <div class="action-row">
+              <label>When spam is detected:</label>
+              <select id="spamActionSelect">
+                <option value="mask">Mask (replace with ***)</option>
+                <option value="remove">Remove word</option>
+                <option value="replace">Replace with [removed]</option>
+                <option value="block">Block the whole request</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 12px;">
+              <button class="btn primary" onclick="saveActions()">Save actions</button>
+              <button class="btn ghost" onclick="loadActions()">Reload</button>
+            </div>
+            <div id="actionsStatus" style="margin-top: 8px; font-size: 13px; color: var(--muted);"></div>
+            <div style="margin-top: 8px; font-size: 12px; color: #64748b;">Note: For spam without a specific flagged word, only "Block" action has effect.</div>
+          </div>
+        </div>
+        <div style="border: 1px solid var(--line); border-radius: 16px; padding: 16px; background: #fafcff;">
+          <div style="font-size: 13px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">Result</div>
+          <div id="testResult" style="margin-top: 12px;"><div style="color:#64748b;">Run a test to see the result here.</div></div>
+          <div id="flaggedWordBlock" style="margin-top: 12px; display:none; padding: 12px 14px; border-radius: 14px; background: #fff7ed; border: 1px solid #fed7aa;">
+            <div style="font-size: 13px; color: #9a3412; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em;">Flagged word</div>
+            <div id="flaggedWordValue" style="margin-top: 6px; color: #7c2d12; font-size: 14px; line-height: 1.6;"></div>
+          </div>
+          <div id="processedTextBlock" style="margin-top: 12px; display:none; padding: 12px 14px; border-radius: 14px; background: #ecfdf5; border: 1px solid #bbf7d0;">
+            <div style="font-size: 13px; color: #065f46; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em;">Processed text</div>
+            <div id="processedTextValue" style="margin-top: 6px; color: #065f46; font-size: 14px; line-height: 1.6;"></div>
+          </div>
+          <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);">
+            <div style="font-size: 13px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">What this does</div>
+            <p style="margin: 8px 0 0; color: #475569; font-size: 14px; line-height: 1.6;">Uses the separate <code>/test-moderate</code> endpoint, so no usage gets deducted. The action preview uses your saved actions, but you can also click the buttons below to override temporarily.</p>
+            <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+              <button class="btn ghost" onclick="testWithAction('mask')" style="font-size:12px; padding:6px 10px;">Preview Mask</button>
+              <button class="btn ghost" onclick="testWithAction('remove')" style="font-size:12px; padding:6px 10px;">Preview Remove</button>
+              <button class="btn ghost" onclick="testWithAction('replace')" style="font-size:12px; padding:6px 10px;">Preview Replace</button>
+              <button class="btn ghost" onclick="testWithAction('block')" style="font-size:12px; padding:6px 10px;">Preview Block</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div><h3 class="section-title">Try the API</h3><p class="section-sub">Copy this, paste it in your app, and only change the two fields at the top: <code>MODSAFE_API_URL</code> and <code>MODSAFE_API_KEY</code>.</p></div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button class="btn primary" onclick="copyApiExample()" style="width:auto;">Copy example</button>
+          <button class="btn ghost" onclick="fillApiExample()" style="width:auto;">Load example</button>
+        </div>
+      </div>
+      <textarea id="apiExample" class="code-box" readonly></textarea>
+    </div>
+
+    <div class="card table-card">
+      <div class="table-head"><div><h3>Moderation Logs</h3><p>Only the logged-in user's data appears here.</p></div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Text</th><th>Category</th><th>Flagged Word</th><th>Mode</th><th>Confidence</th><th>Time</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API_BASES = ["", "/"]; // Use relative URLs
+let currentCustomWords = [];
+let currentModerationMode = "moderation";
+
+const API_EXAMPLE = `const MODSAFE_API_URL = window.location.origin; // your ModSafe API URL
+const MODSAFE_API_KEY = "YOUR_API_KEY"; // your ModSafe key
+
+async function moderateText(text, mode = "moderation") {
+  const res = await fetch(\`\${MODSAFE_API_URL}/moderate\`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": MODSAFE_API_KEY
+    },
+    body: JSON.stringify({ text, mode })
+  });
+  return res.json();
+}
+
+moderateText("tu chutiya hai kya", "moderation").then(console.log);`;
+
+document.addEventListener("DOMContentLoaded", () => {
+  const apiExampleBox = document.getElementById("apiExample");
+  if (apiExampleBox) apiExampleBox.value = API_EXAMPLE;
+  syncModeUI(localStorage.getItem("moderationMode") || "moderation");
+  loadActions();
+});
+
+// Check if already logged in via session
+async function checkSession() {
+  const res = await fetch("/me", { credentials: "include" });
+  if (!res.ok) window.location.href = "auth.html";
+  return res.json();
+}
+
+function formatPlan(plan) { return plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : "Free"; }
+function formatModeLabel(mode) { return String(mode || "moderation").toLowerCase() === "off" ? "Off" : "Moderation"; }
+function getModeDescription(mode) { return String(mode || "moderation").toLowerCase() === "off" ? "Everything is allowed." : "Uses both rules files plus AI."; }
+
+function syncModeUI(mode) {
+  const value = String(mode || "moderation").toLowerCase();
+  currentModerationMode = value;
+  document.getElementById("playgroundStatus").textContent = `Free Playground · ${formatModeLabel(value)}`;
+  document.getElementById("modeValue").textContent = formatModeLabel(value);
+  document.getElementById("modeSub").textContent = getModeDescription(value);
+  const buttons = { moderation: document.getElementById("modeModerationBtn"), off: document.getElementById("modeOffBtn") };
+  Object.entries(buttons).forEach(([key, btn]) => {
+    if (!btn) return;
+    btn.classList.remove("moderation", "off", "active");
+    btn.classList.add("mode-btn");
+    if (key === value) btn.classList.add("active", value);
+  });
+}
+
+function escapeHTML(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function setAccountInfo(username, plan, customWordsCount = 0, moderationMode = "moderation") {
+  document.getElementById("profileCard").innerHTML = `
+    <h2>Welcome back, ${escapeHTML(username)}</h2>
+    <p>Plan: <strong>${formatPlan(plan)}</strong> · Your ModSafe dashboard is ready.</p>
+    <div class="badges">
+      <div class="badge">🇮🇳 Hinglish support</div>
+      <div class="badge">📊 Live tracking</div>
+      <div class="badge">Mode: ${escapeHTML(formatModeLabel(moderationMode))}</div>
+      <div class="badge">${customWordsCount} custom words</div>
+    </div>`;
+}
+
+async function apiFetch(path, options = {}) {
+  const apiKey = localStorage.getItem("apiKey");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(apiKey ? { "x-api-key": apiKey } : {}),
+    ...options.headers,
+  };
+  const response = await fetch(path, {
+    ...options,
+    headers,
+    credentials: "include", // optional, but keep
+  });
+  let data = {};
+  try { data = await response.json(); } catch { data = {}; }
+  return { response, data };
+}
+
+async function loadMe() {
+  const { data } = await apiFetch("/me");
+  if (data.error) { window.location.href = "auth.html"; return; }
+  document.getElementById("apiKeyValue").innerText = data.apiKey;
+  const customWordsCount = Array.isArray(data.customWords) ? data.customWords.length : 0;
+  const mode = String(data.moderationMode || "moderation").toLowerCase();
+  setAccountInfo(data.username, data.plan, customWordsCount, mode);
+  syncModeUI(mode);
+  localStorage.setItem("username", data.username || "");
+  localStorage.setItem("plan", data.plan || "free");
+  localStorage.setItem("moderationMode", mode);
+}
+
+async function loadStats() {
+  const { data } = await apiFetch("/stats");
+  document.getElementById("totalMetric").innerText = data.total ?? 0;
+  document.getElementById("abuseMetric").innerText = data.abuse ?? 0;
+  document.getElementById("spamMetric").innerText = data.spam ?? 0;
+}
+
+async function loadUsage() {
+  const { data } = await apiFetch("/usage");
+  document.getElementById("usageValue").innerText = `${data.used ?? 0} / ${data.limit ?? 0}`;
+  document.getElementById("remainingMetric").innerText = data.remaining ?? 0;
+  document.getElementById("usageSub").innerHTML = (data.remaining ?? 0) > 0
+    ? `${data.remaining} checks remaining on your ${formatPlan(data.plan)} plan.`
+    : "Plan limit reached. Upgrade to continue.";
+  const usageCard = document.getElementById("usageCard");
+  usageCard.classList.remove("good", "warn");
+  usageCard.classList.add((data.remaining ?? 0) <= 100 ? "warn" : "good");
+}
+
+async function loadData() {
+  const { data } = await apiFetch("/data");
+  renderTable(Array.isArray(data) ? data : []);
+}
+
+async function loadFlagged() {
+  const { data } = await apiFetch("/data");
+  const filtered = Array.isArray(data) ? data.filter(item => item.category !== "safe") : [];
+  renderTable(filtered);
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "";
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">No moderation logs yet. Send your first check from the API.</div></td></tr>`;
+    return;
+  }
+  [...data].reverse().forEach(item => {
+    const confidence = Number(item.confidence || item.aiConfidence || 0).toFixed(4);
+    const mode = formatModeLabel(item.moderationMode || "moderation");
+    const flaggedWord = item.flaggedWord || item.matchedWord || "—";
+    tbody.innerHTML += `<tr>
+      <td>${escapeHTML(item.text)}</td>
+      <td class="${escapeHTML(item.category)}">${escapeHTML(item.category)}</td>
+      <td>${escapeHTML(flaggedWord)}</td>
+      <td>${escapeHTML(mode)}</td>
+      <td>${confidence}</td>
+      <td>${new Date(item.timestamp).toLocaleString()}</td>
+    </tr>`;
+  });
+}
+
+async function refreshAll() { await Promise.all([loadMe(), loadStats(), loadUsage(), loadData(), loadCustomWords(), loadActions()]); }
+
+async function copyKey() {
+  try { await navigator.clipboard.writeText(document.getElementById("apiKeyValue").innerText); } catch { alert("Could not copy API key."); }
+}
+async function copyApiExample() { try { await navigator.clipboard.writeText(API_EXAMPLE); } catch { alert("Could not copy example."); } }
+function fillApiExample() { document.getElementById("apiExample").value = API_EXAMPLE; }
+function logout() { fetch("/logout", { method: "POST", credentials: "include" }).then(() => { localStorage.clear(); window.location.href = "auth.html"; }); }
+function fillExample(text) { document.getElementById("testInput").value = text; document.getElementById("testInput").focus(); }
+function clearTester() { document.getElementById("testInput").value = ""; document.getElementById("testResult").innerHTML = `<div style="color:#64748b;">Run a test to see the result here.</div>`; lastTestLogId = null; document.getElementById("processedTextBlock").style.display = "none"; document.getElementById("flaggedWordBlock").style.display = "none"; }
+
+function renderCustomWords(words) {
+  const list = Array.isArray(words) ? words : [];
+  currentCustomWords = list;
+  document.getElementById("customWordsInput").value = list.join(", ");
+  document.getElementById("customWordsStatus").textContent = list.length ? `${list.length} custom word(s) active.` : "No custom words saved yet.";
+  const holder = document.getElementById("customWordsList");
+  holder.innerHTML = "";
+  if (list.length === 0) { holder.innerHTML = `<div style="color:#64748b; font-size:13px; margin-top:4px;">No words yet.</div>`; return; }
+  holder.innerHTML = list.map(word => `<div class="chip"><span>${escapeHTML(word)}</span><button title="Remove word" onclick='removeCustomWord(${JSON.stringify(word)})'>×</button></div>`).join("");
+}
+
+async function loadCustomWords() {
+  try {
+    const { data } = await apiFetch("/custom-words");
+    renderCustomWords(Array.isArray(data.customWords) ? data.customWords : []);
+  } catch (err) { console.error(err); }
+}
+
+async function setModerationMode(mode) {
+  const nextMode = String(mode || "moderation").toLowerCase();
+  const status = document.getElementById("modeSub");
+  if (status) status.textContent = "Saving mode…";
+  try {
+    const { data } = await apiFetch("/moderation-mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: nextMode }) });
+    if (data.error) { if (status) status.textContent = data.error; return; }
+    syncModeUI(data.moderationMode || nextMode);
+    localStorage.setItem("moderationMode", data.moderationMode || nextMode);
+    if (status) status.textContent = getModeDescription(data.moderationMode || nextMode);
+    await loadMe();
+  } catch (err) { console.error(err); if (status) status.textContent = "Could not save mode."; }
+}
+
+async function saveCustomWordsFromList(words) {
+  try {
+    const { data } = await apiFetch("/custom-words", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customWords: words }) });
+    if (data.error) { document.getElementById("customWordsStatus").textContent = data.error; return; }
+    renderCustomWords(Array.isArray(data.customWords) ? data.customWords : []);
+    document.getElementById("customWordsStatus").textContent = "Saved.";
+    await loadMe();
+  } catch (err) { console.error(err); document.getElementById("customWordsStatus").textContent = "Could not save words."; }
+}
+
+async function saveCustomWords() {
+  const input = document.getElementById("customWordsInput").value.trim();
+  const words = input.split(",").map(w => w.trim().toLowerCase()).filter(Boolean);
+  await saveCustomWordsFromList(words);
+}
+
+async function removeCustomWord(word) { await saveCustomWordsFromList(currentCustomWords.filter(w => w !== word)); }
+
+async function clearCustomWords() {
+  try {
+    const { data } = await apiFetch("/custom-words", { method: "DELETE" });
+    if (data.error) { document.getElementById("customWordsStatus").textContent = data.error; return; }
+    renderCustomWords([]);
+    document.getElementById("customWordsStatus").textContent = "All custom words removed.";
+    await loadMe();
+  } catch (err) { console.error(err); document.getElementById("customWordsStatus").textContent = "Could not clear words."; }
+}
+
+async function loadActions() {
+  try {
+    const { data } = await apiFetch("/moderation-actions");
+    document.getElementById("abuseActionSelect").value = data.abuse_action || "mask";
+    document.getElementById("spamActionSelect").value = data.spam_action || "mask";
+    document.getElementById("actionsStatus").textContent = "Actions loaded.";
+  } catch (err) {
+    console.error(err);
+    document.getElementById("actionsStatus").textContent = "Failed to load actions.";
+  }
+}
+
+async function saveActions() {
+  const abuse = document.getElementById("abuseActionSelect").value;
+  const spam = document.getElementById("spamActionSelect").value;
+  try {
+    const { data } = await apiFetch("/moderation-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ abuse_action: abuse, spam_action: spam })
+    });
+    if (data.error) throw new Error(data.error);
+    document.getElementById("actionsStatus").textContent = "Actions saved.";
+    await loadMe();
+  } catch (err) {
+    console.error(err);
+    document.getElementById("actionsStatus").textContent = "Failed to save actions.";
+  }
+}
+
+async function testModerationWithOverride(actionOverride = null) {
+  const text = document.getElementById("testInput").value.trim();
+  const resultDiv = document.getElementById("testResult");
+  if (!text) { resultDiv.innerHTML = `<span style="color:#b45309;">Type something first.</span>`; return; }
+  try {
+    resultDiv.innerHTML = `<div style="display:flex; align-items:center; gap: 10px; color:#64748b;"><span style="width:10px; height:10px; border-radius:999px; background:var(--blue); display:inline-block; animation:pulse 1s infinite;"></span>Checking…</div>`;
+    const body = { text, mode: currentModerationMode };
+    if (actionOverride) body.action_override = actionOverride;
+    const { data } = await apiFetch("/test-moderate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (data.error) { resultDiv.innerHTML = `<span style="color:#dc2626;">${escapeHTML(data.error)}</span>`; return; }
+    lastTestLogId = data.id || null;
+    const isBad = data.flagged;
+    const color = isBad ? "#dc2626" : "#16a34a";
+    const label = isBad ? "Flagged" : "Safe";
+    const confidence = Number(data.confidence || 0).toFixed(4);
+    const width = Math.max(2, Math.min(100, Number(data.confidence || 0) * 100));
+    const flaggedWord = data.flaggedWord || data.matchedWord || "";
+    
+    let extraBlockedHtml = "";
+    if (data.blocked) {
+      extraBlockedHtml = `<div style="margin-top:12px; padding:10px; background:#fee2e2; border-radius:12px; color:#b91c1c;"><strong>Blocked:</strong> ${escapeHTML(data.errorMessage || "This content would be blocked.")}</div>`;
+    }
+    
+    resultDiv.innerHTML = `<div style="border: 1px solid ${isBad ? '#fecaca' : '#bbf7d0'}; background: ${isBad ? '#fef2f2' : '#f0fdf4'}; color: ${color}; border-radius: 18px; padding: 16px; box-shadow: 0 10px 24px rgba(15,23,42,0.06);">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; margin-bottom: 12px;">
+        <div style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em;">${label}</div>
+        <div style="font-size: 13px; font-weight: 800;">Confidence ${confidence}</div>
+      </div>
+      <div style="height: 10px; background: rgba(148,163,184,0.18); border-radius: 999px; overflow: hidden;"><div style="height: 100%; width: ${width}%; background: ${color}; border-radius: 999px;"></div></div>
+      <div style="margin-top: 12px; font-size: 14px; line-height: 1.7; color: #334155;"><strong>Category:</strong> ${escapeHTML(data.category)}<br/><strong>Mode:</strong> ${escapeHTML(formatModeLabel(data.moderationMode || currentModerationMode))}</div>
+      ${extraBlockedHtml}
+    </div>`;
+    
+    const flaggedBlock = document.getElementById("flaggedWordBlock");
+    const flaggedValue = document.getElementById("flaggedWordValue");
+    if (isBad && flaggedWord && !data.blocked) {
+      flaggedBlock.style.display = "block";
+      flaggedValue.innerHTML = `<strong>${escapeHTML(flaggedWord)}</strong>`;
+    } else {
+      flaggedBlock.style.display = "none";
+      flaggedValue.innerHTML = "";
+    }
+    
+    const processedBlock = document.getElementById("processedTextBlock");
+    const processedValue = document.getElementById("processedTextValue");
+    if (data.processedText && data.processedText !== text && !data.blocked) {
+      processedBlock.style.display = "block";
+      processedValue.innerHTML = escapeHTML(data.processedText);
+    } else {
+      processedBlock.style.display = "none";
+      processedValue.innerHTML = "";
+    }
+    
+    await Promise.all([loadData(), loadStats()]);
+  } catch (err) { console.error(err); resultDiv.innerHTML = `<span style="color:#dc2626;">Request failed. Make sure the server is running.</span>`; }
+}
+
+function testModeration() { testModerationWithOverride(null); }
+function testWithAction(action) { testModerationWithOverride(action); }
+
+refreshAll();
+</script>
+<footer style="
+  margin-top: 40px;
+  padding: 20px;
+  text-align: center;
+  border-top: 1px solid #e2e8f0;
+  background: rgba(255,255,255,0.8);
+  backdrop-filter: blur(10px);
+">
+
+  <div style="margin-bottom: 10px; font-weight: 600;">
+    © 2026 ModSafe
+  </div>
+
+  <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; font-size: 14px;">
+    <a href="about.html" style="color:#2563eb; text-decoration:none;">About</a>
+    <a href="privacy.html" style="color:#2563eb; text-decoration:none;">Privacy Policy</a>
+    <a href="terms.html" style="color:#2563eb; text-decoration:none;">Terms & Conditions</a>
+    <a href="refund.html" style="color:#2563eb; text-decoration:none;">Refund Policy</a>
+  </div>
+
+</footer>
+</body>
+</html>

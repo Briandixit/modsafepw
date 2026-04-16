@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign In · ModSafe</title>
+<style>
+  * {
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+  }
+
+  :root {
+    --bg: #f8fafc;
+    --panel: rgba(255,255,255,0.92);
+    --text: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --blue: #2563eb;
+    --blue2: #1d4ed8;
+    --soft: #eff6ff;
+    --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top left, rgba(37,99,235,0.08), transparent 30%),
+      radial-gradient(circle at bottom right, rgba(37,99,235,0.06), transparent 28%),
+      linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  }
+
+  .page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 22px;
+  }
+
+  .shell {
+    width: min(1120px, 100%);
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 28px;
+    align-items: center;
+  }
+
+  .left {
+    padding: 12px;
+    animation: rise 0.6s ease both;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: white;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13px;
+    box-shadow: 0 6px 20px rgba(15,23,42,0.04);
+  }
+
+  .left h1 {
+    margin: 18px 0 12px;
+    font-size: clamp(34px, 5vw, 52px);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    max-width: 14ch;
+  }
+
+  .left h1 span {
+    color: var(--blue);
+  }
+
+  .left p {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--muted);
+    max-width: 54ch;
+  }
+
+  .chips {
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:22px;
+  }
+
+  .chip {
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.8);
+    border: 1px solid var(--line);
+    box-shadow: 0 10px 20px rgba(15,23,42,0.04);
+    color:#334155;
+    font-size: 14px;
+  }
+
+  .chip.highlight {
+    background: var(--blue);
+    color: white;
+    border-color: var(--blue);
+  }
+
+  .card {
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(226,232,240,0.95);
+    border-radius: 22px;
+    padding: 28px;
+    box-shadow: var(--shadow);
+    animation: rise 0.6s ease 0.06s both;
+  }
+
+  .card-top {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    margin-bottom: 18px;
+  }
+
+  .brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .brand-logo img {
+    height: 32px;
+    width: auto;
+  }
+
+  .card h2 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: -0.03em;
+  }
+
+  .card .sub {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .link-btn {
+    text-decoration:none;
+    color: var(--blue);
+    font-weight:600;
+    font-size:14px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--soft);
+    border: 1px solid #dbeafe;
+    transition: 0.2s ease;
+  }
+
+  .link-btn:hover {
+    transform: translateY(-1px);
+    background: #dbeafe;
+  }
+
+  .input-group {
+    margin-top: 14px;
+  }
+
+  label {
+    display:block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #475569;
+    font-weight: 700;
+  }
+
+  input {
+    width: 100%;
+    padding: 14px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-size: 15px;
+    outline: none;
+    transition: 0.2s ease;
+  }
+
+  input:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(37,99,235,0.08);
+  }
+
+  .actions {
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 14px 16px;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor:pointer;
+    transition: 0.2s ease;
+  }
+
+  .btn.primary {
+    background: linear-gradient(135deg, var(--blue), var(--blue2));
+    color: white;
+    box-shadow: 0 14px 30px rgba(37,99,235,0.22);
+  }
+
+  .btn.primary:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn.secondary {
+    background: #eef2ff;
+    color: #1e3a8a;
+    border: 1px solid #dbeafe;
+  }
+
+  .btn.secondary:hover {
+    background: #e0e7ff;
+    transform: translateY(-1px);
+  }
+
+  #msg {
+    min-height: 22px;
+    margin-top: 14px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .footer-note {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .switch {
+    margin-top: 16px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .switch button {
+    border: none;
+    background: transparent;
+    color: var(--blue);
+    font-weight: 800;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .switch button:hover {
+    color: var(--blue2);
+  }
+
+  @media (max-width: 920px) {
+    .shell {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .page {
+      padding: 14px;
+    }
+
+    .card {
+      padding: 22px;
+      border-radius: 18px;
+    }
+
+    .actions {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="shell">
+    <section class="left">
+      <div class="badge">🇮🇳 Indian Language Moderation API</div>
+      <h1>Keep your platform <span>ModSafe</span></h1>
+      <p>Detect abuse and spam in Hinglish, Hindi, and regional languages. Get your free API key in seconds.</p>
+
+      <div class="chips">
+        <div class="chip highlight">1,000 free checks</div>
+        <div class="chip">No credit card</div>
+        <div class="chip">Live dashboard</div>
+        <div class="chip">2 min setup</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-top">
+        <div>
+          <div class="brand-logo">
+            <img src="ModSafe.jpg" alt="ModSafe Logo" />
+          </div>
+          <h2 id="formTitle">Create free account</h2>
+          <div class="sub" id="formSub">Get your API key and dashboard access.</div>
+        </div>
+        <a class="link-btn" href="landingpage.html">Home</a>
+        <a class="link-btn" href="pricing.html">Pricing</a>
+      </div>
+
+      <div class="input-group">
+        <label for="usernameInput">Username</label>
+        <input id="usernameInput" type="text" autocomplete="username" placeholder="johndoe" />
+      </div>
+
+      <div class="input-group">
+        <label for="passwordInput">Password</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="primaryBtn" onclick="register()">Create Account →</button>
+        <button class="btn secondary" id="secondaryBtn" onclick="login()">Sign In</button>
+      </div>
+
+      <div id="msg"></div>
+
+      <div class="switch">
+        <span id="switchText">Already have an account?</span>
+        <button type="button" id="switchBtn" onclick="toggleMode()">Sign in</button>
+      </div>
+
+      <div class="footer-note">
+        Your API key is saved in your browser and shown in the dashboard.
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- FOOTER added after .page -->
+<footer style="text-align: center; padding: 24px 20px; margin-top: 0; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">
+  <a href="terms.html" style="color: #2563eb; text-decoration: none; margin: 0 10px;">Terms</a> |
+  <a href="privacy.html" style="color: #2563eb; text-decoration: none; margin: 0 10px;">Privacy</a> |
+  <a href="refund.html" style="color: #2563eb; text-decoration: none; margin: 0 10px;">Refund Policy</a> |
+  <a href="about.html" style="color: #2563eb; text-decoration: none; margin: 0 10px;">About & Contact</a>
+  <p style="margin-top: 12px;">© 2026 ModSafe – Indian Language Moderation API</p>
+</footer>
+
+<script>
+const BASE_URL = "http://127.0.0.1:3000";
+
+let mode = "register";
+
+function getValues() {
+  return {
+    username: document.getElementById("usernameInput").value.trim(),
+    password: document.getElementById("passwordInput").value.trim(),
+  };
+}
+
+function showMsg(text, color) {
+  const msg = document.getElementById("msg");
+  msg.textContent = text;
+  msg.style.color = color;
+}
+
+function setMode(nextMode) {
+  mode = nextMode;
+  const title = document.getElementById("formTitle");
+  const sub = document.getElementById("formSub");
+  const primary = document.getElementById("primaryBtn");
+  const secondary = document.getElementById("secondaryBtn");
+  const switchText = document.getElementById("switchText");
+  const switchBtn = document.getElementById("switchBtn");
+
+  if (mode === "login") {
+    title.textContent = "Welcome back";
+    sub.textContent = "Sign in to access your dashboard.";
+    primary.textContent = "Sign In →";
+    secondary.textContent = "Create Account";
+    switchText.textContent = "New to ModSafe?";
+    switchBtn.textContent = "Create free account";
+  } else {
+    title.textContent = "Create free account";
+    sub.textContent = "Get your API key and dashboard access.";
+    primary.textContent = "Create Account →";
+    secondary.textContent = "Sign In";
+    switchText.textContent = "Already have an account?";
+    switchBtn.textContent = "Sign in";
+  }
+
+  showMsg("", "#64748b");
+}
+
+function toggleMode() {
+  setMode(mode === "register" ? "login" : "register");
+}
+
+async function requestJSON(url, body) {
+  const res = await fetch(BASE_URL + url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+
+  return { res, data };
+}
+
+function saveSession(data) {
+  localStorage.setItem("apiKey", data.apiKey);
+  localStorage.setItem("username", data.username || "");
+  localStorage.setItem("plan", data.plan || "free");
+}
+
+function goDashboard() {
+  window.location.href = "index.html";
+}
+
+async function register() {
+  const { username, password } = getValues();
+
+  if (!username || !password) {
+    showMsg("Enter username and password.", "#b45309");
+    return;
+  }
+
+  if (username.length < 3) {
+    showMsg("Username must be at least 3 characters.", "#b45309");
+    return;
+  }
+
+  if (password.length < 8) {
+    showMsg("Password must be at least 8 characters.", "#b45309");
+    return;
+  }
+
+  try {
+    const { res, data } = await requestJSON("/register", { username, password });
+
+    if (!res.ok || data.error) {
+      showMsg(data.error || "Could not register.", "#dc2626");
+      return;
+    }
+
+    saveSession(data);
+    showMsg("Account created! Redirecting...", "#059669");
+    setTimeout(goDashboard, 500);
+  } catch (err) {
+    console.error(err);
+    showMsg("Server not reachable. Is it running?", "#dc2626");
+  }
+}
+
+async function login() {
+  const { username, password } = getValues();
+
+  if (!username || !password) {
+    showMsg("Enter username and password.", "#b45309");
+    return;
+  }
+
+  try {
+    const { res, data } = await requestJSON("/login", { username, password });
+
+    if (!res.ok || data.error) {
+      showMsg(data.error || "Invalid login.", "#dc2626");
+      return;
+    }
+
+    saveSession(data);
+    showMsg("Welcome back! Redirecting...", "#059669");
+    setTimeout(goDashboard, 500);
+  } catch (err) {
+    console.error(err);
+    showMsg("Server not reachable. Is it running?", "#dc2626");
+  }
+}
+
+document.getElementById("passwordInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    if (mode === "register") register();
+    else login();
+  }
+});
+</script>
+</body>
+</html>

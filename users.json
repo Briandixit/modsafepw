@@ -1,0 +1,44 @@
+[
+  {
+    "username": "brian",
+    "password": "1234",
+    "apiKey": "60feae87c516ab53db4732dd766a364e"
+  },
+  {
+    "username": "briandixit",
+    "password": "11",
+    "apiKey": "474d551e1189b633135b2fa681a423fc"
+  },
+  {
+    "username": "user1",
+    "password": "1234",
+    "apiKey": "239c29c7fd1e502ce401a6910ac08ace"
+  },
+  {
+    "username": "dixit",
+    "password": "1122",
+    "apiKey": "635463f9043d2dddd3f21a5925adcf67"
+  },
+  {
+    "username": "bd",
+    "password": "772651a65e0a0243dd27acdf4a1a343c:28439e26f262942268b608a1ff01f660cd59e7d064342cf5b620d925665558d1",
+    "apiKey": "a129421ac170a3d1bf81ecb93f870b87",
+    "plan": "free",
+    "customWords": [],
+    "moderationMode": "moderation"
+  },
+  {
+    "username": "testuser",
+    "password": "143cee45f13d69fea82027b4caa254e2:4f29c4e67ca39da881b7d74ac457b0f570f6abe45d20dff5ca1ed485ce86522c",
+    "apiKey": "cdcc551d0cf03e5435e2fc269edde47d7ab9dd391a71998b",
+    "plan": "free",
+    "createdAt": "2026-04-07T20:15:36.388Z"
+  },
+  {
+    "username": "testusr",
+    "password": "b9f54461116a5d41ce836f8cf0420e41:bd969bf6790a1b39c81b070e91f25ea125ba064a7807c4775c35e71fc2e5e009",
+    "apiKey": "c658d98b093c8c2ef4ef1557aa7a4095d9155e0d1e619e9e",
+    "plan": "free",
+    "createdAt": "2026-04-07T20:18:07.987Z"
+  }
+]
