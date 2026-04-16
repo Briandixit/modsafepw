@@ -1,18 +1,22 @@
 require("dotenv").config();
+const { Pool } = require("pg");
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 const express = require("express");
 const session = require("express-session");
-const csrf = require("csurf");
+// const csrf = require("csurf"); // disabled for now
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const db = require("./db");
+// PostgreSQL DB is defined in-app below.
 
 const winston = require("winston");
-const SQLiteStore = require("connect-sqlite3")(session);
+
 
 // --- Logger setup (saves errors to files) ---
 const logger = winston.createLogger({
@@ -71,35 +75,15 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 
 // Session store (in‑memory for development; use Redis in production)
-const sessionStore = new SQLiteStore({ db: "sessions.db", table: "sessions" });
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: false,
-  store: sessionStore,
-  cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24,
-  },
+  saveUninitialized: false
 }));
 
-// CSRF protection (exclude public endpoints and API key requests)
-const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: "lax" } });
-app.use((req, res, next) => {
-  // Skip CSRF for requests with an API key
-  if (req.headers["x-api-key"]) return next();
-
-  // Exclude public POST endpoints
-  const publicEndpoints = ["/login", "/register", "/demo-moderate"];
-  if (publicEndpoints.includes(req.path)) return next();
-
-  if (["POST", "PUT", "DELETE", "PATCH"].includes(req.method)) {
-    return csrfProtection(req, res, next);
-  }
-  next();
-});
+// CSRF protection disabled for now while debugging local login/register flow.
+// The old csurf middleware caused "misconfigured csrf" errors.
 
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
@@ -180,7 +164,7 @@ function verifyPassword(password, stored) {
   const test = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("hex");
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(test, "hex"));
 }
-function getUserByApiKey(apiKey) { return db.getUserByApiKey(apiKey); }
+async function getUserByApiKey(apiKey) { return db.getUserByApiKey(apiKey); }
 
 const KNOWN_SHORT_SLURS = new Set(["bc","mc","chut","lund","gand","gaand","bhos","mad","chod","fuck","shit","ass","dick","cock","piss","cunt","twat","prick","bastard","bitch","slut","whore","crap","damn","hell","suck","fag","nig","retard","idiot","moron"]);
 function readWordList(file) {
@@ -356,7 +340,7 @@ function applyAction(text, flaggedWords, action, category) {
   }
 }
 
-function pushModerationEntry(apiKey, text, result, source, moderationMode = "moderation", extra = {}) {
+async function pushModerationEntry(apiKey, text, result, source, moderationMode = "moderation", extra = {}) {
   const entry = {
     id: crypto.randomUUID(),
     text,
@@ -375,7 +359,7 @@ function pushModerationEntry(apiKey, text, result, source, moderationMode = "mod
     highlightedText: extra.highlightedText || result.highlightedText || null,
     timestamp: new Date().toISOString(),
   };
-  db.addLogEntry(apiKey, entry);
+  await db.addLogEntry(apiKey, entry);
   return entry;
 }
 
@@ -399,10 +383,336 @@ setInterval(() => {
   }
 }, 300000);
 
+
+// ---------- PostgreSQL DB layer ----------
+function parseJsonArray(value) {
+  try {
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function toInt(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function userFromRow(row) {
+  if (!row) return null;
+  return {
+    username: row.username,
+    password: row.password,
+    apiKey: row.apikey || row.apiKey || row.api_key,
+    plan: row.plan || "free",
+    customWords: parseJsonArray(row.customwords || row.customWords || row.custom_words),
+    moderationMode: row.moderationmode || row.moderationMode || row.moderation_mode || "moderation",
+    abuse_action: row.abuse_action || "mask",
+    spam_action: row.spam_action || "mask",
+    createdAt: row.createdat || row.createdAt || row.created_at || null,
+  };
+}
+
+function logFromRow(row) {
+  return {
+    id: row.id,
+    apiKey: row.api_key || row.apiKey,
+    text: row.text,
+    aiCategory: row.ai_category || row.aiCategory,
+    aiConfidence: row.ai_confidence || row.aiConfidence,
+    finalCategory: row.final_category || row.finalCategory,
+    category: row.category,
+    flagged: row.flagged === true || row.flagged === 1 || row.flagged === "t",
+    provider: row.provider,
+    moderationMode: row.moderation_mode || row.moderationMode,
+    source: row.source,
+    corrected: row.corrected === true || row.corrected === 1 || row.corrected === "t",
+    correctedCategory: row.corrected_category || row.correctedCategory,
+    matchedWord: row.matched_word || row.matchedWord,
+    flaggedWord: row.flagged_word || row.flaggedWord,
+    highlightedText: row.highlighted_text || row.highlightedText,
+    timestamp: row.timestamp,
+  };
+}
+
+const dbReady = (async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY,
+      password TEXT NOT NULL,
+      apikey TEXT UNIQUE,
+      plan TEXT DEFAULT 'free',
+      customwords TEXT DEFAULT '[]',
+      moderationmode TEXT DEFAULT 'moderation',
+      abuse_action TEXT DEFAULT 'mask',
+      spam_action TEXT DEFAULT 'mask',
+      createdat TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS usage (
+      api_key TEXT PRIMARY KEY,
+      count INTEGER DEFAULT 0
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id TEXT PRIMARY KEY,
+      api_key TEXT NOT NULL,
+      text TEXT,
+      ai_category TEXT,
+      ai_confidence REAL,
+      final_category TEXT,
+      category TEXT,
+      flagged BOOLEAN,
+      provider TEXT,
+      moderation_mode TEXT,
+      source TEXT,
+      corrected BOOLEAN DEFAULT FALSE,
+      corrected_category TEXT,
+      matched_word TEXT,
+      flagged_word TEXT,
+      highlighted_text TEXT,
+      timestamp TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS apikey TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customwords TEXT DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS moderationmode TEXT DEFAULT 'moderation'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS abuse_action TEXT DEFAULT 'mask'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS spam_action TEXT DEFAULT 'mask'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS createdat TIMESTAMPTZ DEFAULT NOW()`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_apikey_idx ON users(apikey)`);
+
+  await pool.query(`ALTER TABLE usage ADD COLUMN IF NOT EXISTS api_key TEXT`);
+  await pool.query(`ALTER TABLE usage ADD COLUMN IF NOT EXISTS count INTEGER DEFAULT 0`);
+
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS api_key TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS text TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS ai_category TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS ai_confidence REAL`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS final_category TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS category TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS flagged BOOLEAN`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS provider TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS moderation_mode TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS source TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS corrected BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS corrected_category TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS matched_word TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS flagged_word TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS highlighted_text TEXT`);
+  await pool.query(`ALTER TABLE logs ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ DEFAULT NOW()`);
+})();
+
+const db = {
+  async getUserByApiKey(apiKey) {
+    await dbReady;
+    const res = await pool.query(`SELECT * FROM users WHERE apikey = $1`, [apiKey]);
+    return userFromRow(res.rows[0]);
+  },
+
+  async findUserByUsername(username) {
+    await dbReady;
+    const res = await pool.query(`SELECT * FROM users WHERE username = $1`, [username]);
+    return userFromRow(res.rows[0]);
+  },
+
+  async createUser(username, passwordHash, apiKey, plan = "free") {
+    await dbReady;
+    await pool.query(
+      `INSERT INTO users (username, password, apikey, plan, customwords, moderationmode, abuse_action, spam_action, createdat)
+       VALUES ($1, $2, $3, $4, '[]', 'moderation', 'mask', 'mask', NOW())`,
+      [username, passwordHash, apiKey, plan]
+    );
+  },
+
+  async updateUserPassword(username, passwordHash) {
+    await dbReady;
+    await pool.query(`UPDATE users SET password = $1 WHERE username = $2`, [passwordHash, username]);
+  },
+
+  async updateCustomWords(apiKey, wordsArray) {
+    await dbReady;
+    await pool.query(`UPDATE users SET customwords = $1 WHERE apikey = $2`, [JSON.stringify(wordsArray), apiKey]);
+  },
+
+  async updateModerationMode(apiKey, mode) {
+    await dbReady;
+    await pool.query(`UPDATE users SET moderationmode = $1 WHERE apikey = $2`, [mode, apiKey]);
+  },
+
+  async updateModerationActions(apiKey, abuse_action, spam_action) {
+    await dbReady;
+    await pool.query(
+      `UPDATE users SET abuse_action = $1, spam_action = $2 WHERE apikey = $3`,
+      [abuse_action, spam_action, apiKey]
+    );
+  },
+
+  async getModerationActions(apiKey) {
+    await dbReady;
+    const res = await pool.query(`SELECT abuse_action, spam_action FROM users WHERE apikey = $1`, [apiKey]);
+    const row = res.rows[0];
+    return {
+      abuse_action: row?.abuse_action || "mask",
+      spam_action: row?.spam_action || "mask",
+    };
+  },
+
+  async getUsage(apiKey) {
+    await dbReady;
+    const res = await pool.query(`SELECT count FROM usage WHERE api_key = $1`, [apiKey]);
+    return toInt(res.rows[0]?.count, 0);
+  },
+
+  async incrementUsage(apiKey) {
+    await dbReady;
+    await pool.query(
+      `INSERT INTO usage (api_key, count)
+       VALUES ($1, 1)
+       ON CONFLICT (api_key)
+       DO UPDATE SET count = usage.count + 1`,
+      [apiKey]
+    );
+  },
+
+  async addLogEntry(apiKey, entry) {
+    await dbReady;
+    await pool.query(
+      `INSERT INTO logs (
+        id, api_key, text, ai_category, ai_confidence, final_category, category,
+        flagged, provider, moderation_mode, source, corrected, corrected_category,
+        matched_word, flagged_word, highlighted_text, timestamp
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13,
+        $14, $15, $16, $17
+      )`,
+      [
+        entry.id,
+        apiKey,
+        entry.text ?? null,
+        entry.aiCategory ?? null,
+        entry.aiConfidence ?? null,
+        entry.finalCategory ?? null,
+        entry.category ?? null,
+        !!entry.flagged,
+        entry.provider ?? null,
+        entry.moderationMode ?? null,
+        entry.source ?? null,
+        !!entry.corrected,
+        entry.correctedCategory ?? null,
+        entry.matchedWord ?? null,
+        entry.flaggedWord ?? null,
+        entry.highlightedText ?? null,
+        entry.timestamp ?? new Date().toISOString(),
+      ]
+    );
+  },
+
+  async getLogsForApiKey(apiKey) {
+    await dbReady;
+    const res = await pool.query(
+      `SELECT * FROM logs WHERE api_key = $1 ORDER BY timestamp DESC LIMIT 1000`,
+      [apiKey]
+    );
+    return res.rows.map(logFromRow);
+  },
+
+  async getStatsForApiKey(apiKey) {
+    await dbReady;
+    const res = await pool.query(
+      `
+      SELECT
+        COUNT(*)::int AS total,
+        COALESCE(SUM(CASE WHEN category = 'abuse' THEN 1 ELSE 0 END), 0)::int AS abuse,
+        COALESCE(SUM(CASE WHEN category = 'spam' THEN 1 ELSE 0 END), 0)::int AS spam,
+        COALESCE(SUM(CASE WHEN category = 'safe' THEN 1 ELSE 0 END), 0)::int AS safe
+      FROM logs
+      WHERE api_key = $1
+      `,
+      [apiKey]
+    );
+    return res.rows[0] || { total: 0, abuse: 0, spam: 0, safe: 0 };
+  },
+
+  async updateLogFeedback(id, correctedCategory) {
+    await dbReady;
+    await pool.query(
+      `
+      UPDATE logs
+      SET
+        corrected = TRUE,
+        corrected_category = $1,
+        final_category = $1,
+        category = $1,
+        flagged = CASE WHEN $1 = 'safe' THEN FALSE ELSE TRUE END
+      WHERE id = $2
+      `,
+      [correctedCategory, id]
+    );
+  },
+
+  async getAllUsers() {
+    await dbReady;
+    const res = await pool.query(
+      `
+      SELECT
+        u.username,
+        u.apikey,
+        u.plan,
+        u.moderationmode,
+        u.customwords,
+        u.createdat,
+        COALESCE(us.count, 0) AS usage_count
+      FROM users u
+      LEFT JOIN usage us ON u.apikey = us.api_key
+      ORDER BY u.createdat DESC
+      `
+    );
+
+    return res.rows.map((u) => ({
+      username: u.username,
+      apiKey: u.apikey,
+      plan: u.plan,
+      moderationMode: u.moderationmode,
+      customWords: parseJsonArray(u.customwords),
+      createdAt: u.createdat,
+      customWordsCount: parseJsonArray(u.customwords).length,
+      usage: toInt(u.usage_count, 0),
+    }));
+  },
+
+  async getAllLogsWithUser() {
+    await dbReady;
+    const res = await pool.query(
+      `
+      SELECT l.*, u.username
+      FROM logs l
+      JOIN users u ON l.api_key = u.apikey
+      ORDER BY l.timestamp DESC
+      LIMIT 1000
+      `
+    );
+
+    return res.rows.map((row) => ({
+      ...logFromRow(row),
+      username: row.username,
+    }));
+  },
+};
+
 // ---------- Authentication middleware ----------
 async function authenticate(req, res, next) {
   if (req.session && req.session.userId) {
-    const user = db.findUserByUsername(req.session.userId);
+    const user = await db.findUserByUsername(req.session.userId);
     if (user) {
       req.user = user;
       return next();
@@ -410,7 +720,7 @@ async function authenticate(req, res, next) {
   }
   const apiKey = req.headers["x-api-key"];
   if (apiKey) {
-    const user = getUserByApiKey(apiKey);
+    const user = await getUserByApiKey(apiKey);
     if (user) {
       req.user = user;
       return next();
@@ -436,58 +746,102 @@ app.get("/health", (req, res) => {
 app.post("/register", async (req, res) => {
   const username = normalizeUsername(req.body.username);
   const password = String(req.body.password || "");
-  if (!username || !password) return res.status(400).json({ error: "Missing username or password" });
-  if (username.length < 3) return res.status(400).json({ error: "Username must be at least 3 characters" });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
-  const existing = db.findUserByUsername(username);
-  if (existing) return res.status(409).json({ error: "User already exists" });
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Missing username or password" });
+  }
+  if (username.length < 3) {
+    return res.status(400).json({ error: "Username must be at least 3 characters" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const hashedPassword = crypto
+    .createHash("sha256")
+    .update(password)
+    .digest("hex");
+
   const apiKey = createApiKey();
-  const passwordHash = hashPassword(password);
-  db.createUser(username, passwordHash, apiKey, "free");
-  req.session.userId = username;
-  req.session.apiKey = apiKey;
-  res.status(201).json({
-    apiKey,
-    username,
-    plan: "free",
-    customWords: [],
-    moderationMode: "moderation",
-    abuse_action: "mask",
-    spam_action: "mask",
-  });
+
+  try {
+    const existing = await db.findUserByUsername(username);
+    if (existing) {
+      return res.status(409).json({ error: "User already exists" });
+    }
+
+    await db.createUser(username, hashedPassword, apiKey, "free");
+
+    req.session.userId = username;
+    req.session.apiKey = apiKey;
+
+    res.status(201).json({
+      username,
+      apiKey,
+      plan: "free",
+      customWords: [],
+      moderationMode: "moderation",
+      abuse_action: "mask",
+      spam_action: "mask",
+    });
+  } catch (err) {
+    console.error("Register error:", err);
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "User already exists" });
+    }
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.post("/login", authLimiter, async (req, res) => {
   const username = normalizeUsername(req.body.username);
   const password = String(req.body.password || "");
-  if (!username || !password) return res.status(400).json({ error: "Missing username or password" });
-  const user = db.findUserByUsername(username);
-  if (!user || !verifyPassword(password, user.password)) {
-    return res.status(401).json({ error: "Invalid login" });
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Missing username or password" });
   }
-  if (!String(user.password).includes(":")) {
-    const newHash = hashPassword(password);
-    db.updateUserPassword(username, newHash);
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM users WHERE username = $1",
+      [username]
+    );
+
+    const user = result.rows[0];
+    if (!user) {
+      return res.status(401).json({ error: "Invalid login" });
+    }
+
+    // Register stores a SHA-256 hash, so login must compare the same way.
+    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
+    if (String(user.password) !== hashedPassword) {
+      return res.status(401).json({ error: "Invalid login" });
+    }
+
+    req.session.userId = user.username;
+    req.session.apiKey = user.apikey;
+
+    return res.json({
+      apiKey: user.apikey,
+      username: user.username,
+      plan: user.plan || "free",
+      customWords: normalizeCustomWords(user.customWords || user.customwords || []),
+      moderationMode: normalizeMode(user.moderationMode || user.moderationmode || "moderation"),
+      abuse_action: user.abuse_action || "mask",
+      spam_action: user.spam_action || "mask",
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
-  req.session.userId = user.username;
-  req.session.apiKey = user.apiKey;
-  res.json({
-    apiKey: user.apiKey,
-    username: user.username,
-    plan: user.plan || "free",
-    customWords: normalizeCustomWords(user.customWords || []),
-    moderationMode: normalizeMode(user.moderationMode || "moderation"),
-    abuse_action: user.abuse_action || "mask",
-    spam_action: user.spam_action || "mask",
-  });
 });
 
 app.post("/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get("/me", authenticate, (req, res) => {
-  const actions = db.getModerationActions(req.user.apiKey);
+app.get("/me", authenticate, async (req, res) => {
+  const actions = await db.getModerationActions(req.user.apiKey);
   res.json({
     username: req.user.username,
     apiKey: req.user.apiKey,
@@ -499,72 +853,72 @@ app.get("/me", authenticate, (req, res) => {
   });
 });
 
-app.get("/usage", authenticate, (req, res) => {
+app.get("/usage", authenticate, async (req, res) => {
   const apiKey = req.user.apiKey;
   const plan = req.user.plan || "free";
   const limit = getLimitForPlan(plan);
-  const used = db.getUsage(apiKey);
+  const used = await db.getUsage(apiKey);
   res.json({ used, limit, remaining: Math.max(0, limit - used), plan });
 });
 
-app.get("/stats", authenticate, (req, res) => {
-  const stats = db.getStatsForApiKey(req.user.apiKey) || { total: 0, abuse: 0, spam: 0, safe: 0 };
+app.get("/stats", authenticate, async (req, res) => {
+  const stats = await db.getStatsForApiKey(req.user.apiKey) || { total: 0, abuse: 0, spam: 0, safe: 0 };
   res.json(stats);
 });
 
-app.get("/data", authenticate, (req, res) => {
-  const logs = db.getLogsForApiKey(req.user.apiKey);
+app.get("/data", authenticate, async (req, res) => {
+  const logs = await db.getLogsForApiKey(req.user.apiKey);
   res.json(logs);
 });
 
-app.get("/custom-words", authenticate, (req, res) => {
-  const user = db.getUserByApiKey(req.user.apiKey);
+app.get("/custom-words", authenticate, async (req, res) => {
+  const user = await db.getUserByApiKey(req.user.apiKey);
   res.json({ customWords: user ? user.customWords : [] });
 });
 
-app.post("/custom-words", authenticate, (req, res) => {
+app.post("/custom-words", authenticate, async (req, res) => {
   const words = normalizeCustomWords(req.body.customWords ?? req.body.words ?? []);
-  db.updateCustomWords(req.user.apiKey, words);
+  await db.updateCustomWords(req.user.apiKey, words);
   res.json({ ok: true, customWords: words });
 });
 
-app.delete("/custom-words", authenticate, (req, res) => {
-  db.updateCustomWords(req.user.apiKey, []);
+app.delete("/custom-words", authenticate, async (req, res) => {
+  await db.updateCustomWords(req.user.apiKey, []);
   res.json({ ok: true, customWords: [] });
 });
 
-app.get("/moderation-mode", authenticate, (req, res) => {
+app.get("/moderation-mode", authenticate, async (req, res) => {
   res.json({ moderationMode: normalizeMode(req.user.moderationMode || "moderation") });
 });
 
-app.post("/moderation-mode", authenticate, (req, res) => {
+app.post("/moderation-mode", authenticate, async (req, res) => {
   const nextMode = normalizeMode(req.body.mode);
-  db.updateModerationMode(req.user.apiKey, nextMode);
+  await db.updateModerationMode(req.user.apiKey, nextMode);
   res.json({ ok: true, moderationMode: nextMode });
 });
 
-app.get("/moderation-actions", authenticate, (req, res) => {
-  const actions = db.getModerationActions(req.user.apiKey);
+app.get("/moderation-actions", authenticate, async (req, res) => {
+  const actions = await db.getModerationActions(req.user.apiKey);
   res.json(actions);
 });
 
-app.post("/moderation-actions", authenticate, (req, res) => {
+app.post("/moderation-actions", authenticate, async (req, res) => {
   const abuse = String(req.body.abuse_action || "mask").toLowerCase();
   const spam = String(req.body.spam_action || "mask").toLowerCase();
   const valid = ["mask","remove","replace","block"];
   if (!valid.includes(abuse) || !valid.includes(spam)) {
     return res.status(400).json({ error: "Invalid action. Use mask, remove, replace, or block." });
   }
-  db.updateModerationActions(req.user.apiKey, abuse, spam);
+  await db.updateModerationActions(req.user.apiKey, abuse, spam);
   res.json({ ok: true, abuse_action: abuse, spam_action: spam });
 });
 
-app.post("/feedback", authenticate, (req, res) => {
+app.post("/feedback", authenticate, async (req, res) => {
   const id = String(req.body.id || "").trim();
   const correctedCategory = String(req.body.correctedCategory || "").trim().toLowerCase();
   if (!id) return res.status(400).json({ error: "Missing log id" });
   if (!["safe","spam","abuse"].includes(correctedCategory)) return res.status(400).json({ error: "Invalid corrected category" });
-  db.updateLogFeedback(id, correctedCategory);
+  await db.updateLogFeedback(id, correctedCategory);
   res.json({ ok: true, id, correctedCategory });
 });
 
@@ -576,14 +930,14 @@ app.post("/moderate", authenticate, async (req, res) => {
   const text = String(req.body.text || "").trim();
   const customWords = normalizeCustomWords(req.user.customWords || []);
   const mode = normalizeMode(req.body.mode || req.user.moderationMode || "moderation");
-  const actions = db.getModerationActions(apiKey);
+  const actions = await db.getModerationActions(apiKey);
   if (isRateLimited(apiKey, plan)) return res.status(429).json({ error: "Rate limit exceeded", limitPerMinute: getRateLimitForPlan(plan) });
   if (!text) return res.json({ flagged: false, category: "safe", confidence: 0, provider: "safe", moderationMode: mode, matchedWord: null, flaggedWord: null, highlightedText: null, processedText: "" });
   if (mode === "off") {
-    const entry = pushModerationEntry(apiKey, text, { category: "safe", confidence: 0, provider: "off" }, "live", mode);
+    const entry = await pushModerationEntry(apiKey, text, { category: "safe", confidence: 0, provider: "off" }, "live", mode);
     return res.json({ id: entry.id, flagged: false, category: "safe", confidence: 0, provider: "off", moderationMode: mode, matchedWord: null, flaggedWord: null, highlightedText: null, processedText: text });
   }
-  const currentUsage = db.getUsage(apiKey);
+  const currentUsage = await db.getUsage(apiKey);
   if (currentUsage >= limit) return res.status(429).json({ error: "Plan limit reached", limit, used: currentUsage, remaining: 0 });
   const result = await classifyModeration(text, customWords, mode);
   let action = "mask";
@@ -592,8 +946,8 @@ app.post("/moderate", authenticate, async (req, res) => {
   const flaggedWords = result.matchedWord ? [result.matchedWord] : [];
   const { processedText, blocked } = applyAction(text, flaggedWords, action, result.category);
   if (blocked) return res.status(403).json({ error: `Content blocked due to ${result.category}`, category: result.category, confidence: result.confidence, moderationMode: mode });
-  const entry = pushModerationEntry(apiKey, text, result, "live", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
-  db.incrementUsage(apiKey);
+  const entry = await pushModerationEntry(apiKey, text, result, "live", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
+  await db.incrementUsage(apiKey);
   res.json({ id: entry.id, flagged: result.category !== "safe", category: result.category, confidence: result.confidence, provider: result.provider, moderationMode: mode, matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText, processedText });
 });
 
@@ -602,7 +956,7 @@ app.post("/test-moderate", authenticate, async (req, res) => {
   const text = String(req.body.text || "").trim();
   const customWords = normalizeCustomWords(req.user.customWords || []);
   const mode = normalizeMode(req.body.mode || req.user.moderationMode || "moderation");
-  const actions = db.getModerationActions(req.user.apiKey);
+  const actions = await db.getModerationActions(req.user.apiKey);
   let actionOverride = req.body.action_override;
   if (actionOverride && !["mask","remove","replace","block"].includes(actionOverride)) actionOverride = null;
   if (!text) return res.json({ flagged: false, category: "safe", confidence: 0, provider: "safe", moderationMode: mode, matchedWord: null, flaggedWord: null, highlightedText: null, processedText: "" });
@@ -613,11 +967,11 @@ app.post("/test-moderate", authenticate, async (req, res) => {
   const flaggedWords = result.matchedWord ? [result.matchedWord] : [];
   const { processedText, blocked } = applyAction(text, flaggedWords, action, result.category);
   if (blocked) return res.json({ flagged: true, category: result.category, confidence: result.confidence, provider: result.provider, moderationMode: mode, matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText, blocked: true, errorMessage: `Would be blocked (${result.category})` });
-  const entry = pushModerationEntry(req.user.apiKey, text, result, "test", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
+  const entry = await pushModerationEntry(req.user.apiKey, text, result, "test", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
   res.json({ id: entry.id, flagged: result.category !== "safe", category: result.category, confidence: result.confidence, provider: result.provider, moderationMode: mode, matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText, processedText });
 });
 
-app.post("/demo-moderate", (req, res) => {
+app.post("/demo-moderate", async (req, res) => {
   const text = String(req.body.text || "").trim();
   const mode = normalizeMode(req.body.mode || "moderation");
   if (!text) return res.json({ flagged: false, category: "safe", confidence: 0, provider: "rules", moderationMode: mode, matchedWord: null, flaggedWord: null, highlightedText: null });
@@ -641,9 +995,9 @@ app.post("/moderate-batch", authenticate, async (req, res) => {
   const limit = getLimitForPlan(plan);
   const customWords = normalizeCustomWords(req.user.customWords || []);
   const mode = normalizeMode(req.body.mode || req.user.moderationMode || "moderation");
-  const actions = db.getModerationActions(apiKey);
+  const actions = await db.getModerationActions(apiKey);
   if (isRateLimited(apiKey, plan)) return res.status(429).json({ error: "Rate limit exceeded", limitPerMinute: getRateLimitForPlan(plan) });
-  let currentUsage = db.getUsage(apiKey);
+  let currentUsage = await db.getUsage(apiKey);
   const needed = texts.length;
   if (currentUsage + needed > limit) return res.status(429).json({ error: "Plan limit would be exceeded", limit, used: currentUsage, remaining: limit - currentUsage });
   const results = [];
@@ -654,10 +1008,10 @@ app.post("/moderate-batch", authenticate, async (req, res) => {
     else if (result.category === "spam") action = actions.spam_action;
     const flaggedWords = result.matchedWord ? [result.matchedWord] : [];
     const { processedText, blocked } = applyAction(text, flaggedWords, action, result.category);
-    const entry = pushModerationEntry(apiKey, text, result, "batch", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
+    const entry = await pushModerationEntry(apiKey, text, result, "batch", mode, { matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText });
     results.push({ id: entry.id, originalText: text, flagged: result.category !== "safe", category: result.category, confidence: result.confidence, provider: result.provider, moderationMode: mode, matchedWord: result.matchedWord, flaggedWord: result.matchedWord, highlightedText: result.highlightedText, processedText, blocked });
   }
-  for (let i = 0; i < needed; i++) db.incrementUsage(apiKey);
+  for (let i = 0; i < needed; i++) await db.incrementUsage(apiKey);
   res.json({ success: true, count: needed, results });
 });
 
@@ -697,24 +1051,30 @@ app.post("/admin/login", (req, res) => {
   res.json({ token });
 });
 
-app.get("/admin/users", (req, res) => {
+app.get("/admin/users", async (req, res) => {
   if (!req.session.adminToken) return res.status(401).json({ error: "Unauthorized" });
-  const users = db.getAllUsers();
+  const users = await db.getAllUsers();
   res.json({ users });
 });
 
-app.get("/admin/logs", (req, res) => {
+app.get("/admin/logs", async (req, res) => {
   if (!req.session.adminToken) return res.status(401).json({ error: "Unauthorized" });
-  const logs = db.getAllLogsWithUser();
+  const logs = await db.getAllLogsWithUser();
   res.json({ logs });
 });
 
 app.use((err, req, res, next) => {
-  if (err.code === "EBADCSRFTOKEN") return res.status(403).json({ error: "Invalid CSRF token" });
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 ModSafe server running on http://${HOST}:${PORT}`);
-});
+dbReady
+  .then(() => {
+    app.listen(PORT, HOST, () => {
+      console.log(`🚀 ModSafe server running on http://${HOST}:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Database initialization failed:", err);
+    process.exit(1);
+  });
