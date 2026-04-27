@@ -149,7 +149,10 @@
           <div class="small-title">API Key</div>
           <div class="api-box" style="margin-top: 10px;">
             <div class="api-value" id="apiKeyValue">Loading…</div>
-            <button class="btn copy-btn" onclick="copyKey()">Copy</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn copy-btn" onclick="copyKey()">Copy</button>
+              <button class="btn copy-btn" onclick="rotateApiKey()">Rotate</button>
+            </div>
           </div>
         </div>
         <div class="card usage" id="usageCard">
@@ -441,6 +444,14 @@ async function refreshAll() { await Promise.all([loadMe(), loadStats(), loadUsag
 
 async function copyKey() {
   try { await navigator.clipboard.writeText(document.getElementById("apiKeyValue").innerText); } catch { alert("Could not copy API key."); }
+}
+async function rotateApiKey() {
+  if (!confirm("Rotate your API key? Existing integrations using the old key must be updated.")) return;
+  const { response, data } = await apiFetch("/api-key/rotate", { method: "POST" });
+  if (!response.ok || data.error) { alert(data.error || "Could not rotate API key."); return; }
+  localStorage.setItem("apiKey", data.apiKey);
+  document.getElementById("apiKeyValue").innerText = data.apiKey;
+  alert("API key rotated. Update any integrations that use the old key.");
 }
 async function copyApiExample() { try { await navigator.clipboard.writeText(API_EXAMPLE); } catch { alert("Could not copy example."); } }
 function fillApiExample() { document.getElementById("apiExample").value = API_EXAMPLE; }
