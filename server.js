@@ -1191,7 +1191,7 @@ app.post("/demo-moderate", demoLimiter, async (req, res) => {
 
   try {
     // 🚀 USE SAME ENGINE AS DASHBOARD
-    const result = await classifyModeration(text, [], mode);
+    const result = await classifyModeration(text, strictWords, mode);
 
     return res.json({
       flagged: result.category !== "safe",
