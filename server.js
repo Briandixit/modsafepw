@@ -1333,7 +1333,10 @@ app.post("/create-order", async (req, res) => {
       currency: "INR"
     });
 
-    res.json(order);
+   res.json({
+  ...order,
+  key: process.env.RAZORPAY_KEY_ID
+});
 
   } catch (err) {
     console.error(err);

@@ -229,7 +229,7 @@ async function buyPlan(plan) {
     const order = await res.json();
 
     const options = {
-      key: "rzp_live_Sk18ZjF9sMwDN4",
+      key: order.key,
       amount: order.amount,
       currency: order.currency,
       name: "ModSafe",
