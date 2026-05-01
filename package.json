@@ -23,6 +23,7 @@
     "express-session": "^1.19.0",
     "helmet": "^8.1.0",
     "pg": "^8.20.0",
+    "razorpay": "^2.9.6",
     "winston": "^3.19.0"
   }
 }

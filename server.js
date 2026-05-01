@@ -34,6 +34,7 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const Razorpay = require("razorpay");
 const { createPgSessionStore } = require("./lib/pg-session-store");
 const moderation = require("./lib/moderation");
 // PostgreSQL DB is defined in-app below.
@@ -70,6 +71,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
 const API_KEY_PEPPER = process.env.API_KEY_PEPPER || process.env.SESSION_SECRET;
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 
 // ---------- Security middleware ----------
 app.set("trust proxy", 1);
@@ -1305,6 +1310,70 @@ app.use((err, req, res, next) => {
     return res.status(403).json({ error: "CORS origin denied" });
   }
   res.status(500).json({ error: "Internal server error" });
+});
+
+app.post("/create-order", async (req, res) => {
+  try {
+    const { plan } = req.body;
+
+    const prices = {
+      starter: 99900,
+      growth: 299900,
+      scale: 999900
+    };
+
+    if (!prices[plan]) {
+      return res.status(400).json({
+        error: "Invalid plan"
+      });
+    }
+
+    const order = await razorpay.orders.create({
+      amount: prices[plan],
+      currency: "INR"
+    });
+
+    res.json(order);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Order creation failed"
+    });
+  }
+});
+
+app.post("/verify-payment", async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
+    } = req.body;
+
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(
+        razorpay_order_id + "|" + razorpay_payment_id
+      )
+      .digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      return res.status(400).json({
+        success: false
+      });
+    }
+
+    res.json({
+      success: true
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false
+    });
+  }
 });
 
 dbReady
