@@ -111,7 +111,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     if (allowedOrigins.length === 0) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("CORS origin denied"));
+    return callback(null, true);
   },
   credentials: true,
 }));
