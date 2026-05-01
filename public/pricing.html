@@ -150,7 +150,7 @@
         <li>Custom moderation rules</li>
         <li>Email support</li>
       </ul>
-      <a class="btn primary" href="auth.html">Choose Starter</a>
+      <a class="btn primary" href="#" onclick="buyPlan('starter')">Choose Starter</a>
       <div class="small">Response within 24h</div>
     </div>
 
@@ -165,7 +165,7 @@
         <li>Team access</li>
         <li>Custom blocked terms</li>
       </ul>
-      <a class="btn ghost" href="auth.html">Choose Growth</a>
+      <a class="btn ghost" href="#" onclick="buyPlan('growth')">Choose Growth</a>
       <div class="small">Response within 8h</div>
     </div>
 
@@ -180,7 +180,7 @@
         <li>Priority onboarding</li>
         <li>Production‑ready setup</li>
       </ul>
-      <a class="btn ghost" href="auth.html">Talk to sales</a>
+      <a class="btn ghost" href="#" onclick="buyPlan('scale')">Talk to sales</a>
       <div class="small">Same‑day priority</div>
     </div>
   </div>
@@ -212,8 +212,58 @@
 <script>
 const apiKey = localStorage.getItem("apiKey");
 const dashBtn = document.getElementById("dashBtn");
+
 dashBtn.href = apiKey ? "index.html" : "auth.html";
 dashBtn.innerText = apiKey ? "Dashboard" : "Get started";
+
+async function buyPlan(plan) {
+  try {
+    const res = await fetch("/create-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ plan })
+    });
+
+    const order = await res.json();
+
+    const options = {
+      key: "rzp_live_Sk18ZjF9sMwDN4",
+      amount: order.amount,
+      currency: order.currency,
+      name: "ModSafe",
+      description: plan + " plan purchase",
+      order_id: order.id,
+
+      handler: async function(response) {
+        const verifyRes = await fetch("/verify-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(response)
+        });
+
+        const data = await verifyRes.json();
+
+        if (data.success) {
+          alert("Payment successful!");
+        } else {
+          alert("Payment verification failed");
+        }
+      }
+    };
+
+    const rzp = new Razorpay(options);
+    rzp.open();
+
+  } catch (err) {
+    console.error(err);
+    alert("Payment failed");
+  }
+}
 </script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </body>
 </html>
