@@ -209,6 +209,7 @@
   <p style="margin-top: 12px;">© 2026 ModSafe – Indian Language Moderation API</p>
 </footer>
 
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 const apiKey = localStorage.getItem("apiKey");
 const dashBtn = document.getElementById("dashBtn");
@@ -218,15 +219,30 @@ dashBtn.innerText = apiKey ? "Dashboard" : "Get started";
 
 async function buyPlan(plan) {
   try {
+    if (!apiKey) {
+      localStorage.setItem("pendingPlan", plan);
+      window.location.href = "auth.html";
+      return;
+    }
+    if (!window.Razorpay) {
+      alert("Razorpay checkout could not load. Please refresh and try again.");
+      return;
+    }
+
     const res = await fetch("/create-order", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-api-key": apiKey
       },
       body: JSON.stringify({ plan })
     });
 
     const order = await res.json();
+    if (!res.ok || order.error) {
+      alert(order.error || "Could not create payment order");
+      return;
+    }
 
     const options = {
       key: order.key,
@@ -240,17 +256,20 @@ async function buyPlan(plan) {
         const verifyRes = await fetch("/verify-payment", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-api-key": apiKey
           },
-          body: JSON.stringify(response)
+          body: JSON.stringify({ ...response, plan })
         });
 
         const data = await verifyRes.json();
 
         if (data.success) {
+          localStorage.setItem("plan", data.plan || plan);
           alert("Payment successful!");
+          window.location.href = "index.html";
         } else {
-          alert("Payment verification failed");
+          alert(data.error || "Payment verification failed");
         }
       }
     };
@@ -260,10 +279,9 @@ async function buyPlan(plan) {
 
   } catch (err) {
     console.error(err);
-    alert("Payment failed");
+    alert(err.message || "Payment failed");
   }
 }
 </script>
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </body>
 </html>

@@ -82,7 +82,7 @@ app.disable("x-powered-by");
 app.use((req, res, next) => {
   req.id = req.get("x-request-id") || crypto.randomUUID();
   res.setHeader("X-Request-Id", req.id);
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  res.setHeader("Permissions-Policy", 'camera=(), microphone=(), geolocation=(), payment=(self "https://checkout.razorpay.com"), usb=()');
   next();
 });
 app.use(helmet({
@@ -90,14 +90,15 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://checkout.razorpay.com"],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
+      frameSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      formAction: ["'self'"],
+      formAction: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com"],
       frameAncestors: ["'none'"],
       upgradeInsecureRequests: isProduction ? [] : null,
     },
@@ -727,6 +728,14 @@ const db = {
     await pool.query(`UPDATE users SET password = $1 WHERE username = $2`, [passwordHash, username]);
   },
 
+  async updateUserPlan(apiKey, plan) {
+    await dbReady;
+    await pool.query(
+      `UPDATE users SET plan = $1 WHERE apikey_hash = $2 OR apikey = $3`,
+      [plan, getApiKeyHash(apiKey), apiKey]
+    );
+  },
+
   async updateCustomWords(apiKey, wordsArray) {
     await dbReady;
     await pool.query(`UPDATE users SET customwords = $1 WHERE apikey = $2`, [JSON.stringify(wordsArray), apiKey]);
@@ -1317,9 +1326,9 @@ app.post("/create-order", async (req, res) => {
     const { plan } = req.body;
 
     const prices = {
-      starter: 99900,
-      growth: 299900,
-      scale: 999900
+      starter: 29900,
+      growth: 99900,
+      scale: 249900
     };
 
     if (!prices[plan]) {
@@ -1330,7 +1339,10 @@ app.post("/create-order", async (req, res) => {
 
     const order = await razorpay.orders.create({
       amount: prices[plan],
-      currency: "INR"
+      currency: "INR",
+      notes: {
+        plan
+      }
     });
 
    res.json({
@@ -1351,7 +1363,8 @@ app.post("/verify-payment", async (req, res) => {
     const {
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
+      plan
     } = req.body;
 
     const generatedSignature = crypto
@@ -1367,8 +1380,19 @@ app.post("/verify-payment", async (req, res) => {
       });
     }
 
+    const selectedPlan = String(plan || "").trim().toLowerCase();
+    if (selectedPlan && !["starter", "growth", "scale"].includes(selectedPlan)) {
+      return res.status(400).json({ success: false, error: "Invalid plan" });
+    }
+
+    const apiKey = req.headers["x-api-key"] || req.body.apiKey;
+    if (apiKey && selectedPlan) {
+      await db.updateUserPlan(apiKey, selectedPlan);
+    }
+
     res.json({
-      success: true
+      success: true,
+      plan: selectedPlan || null
     });
 
   } catch (err) {
