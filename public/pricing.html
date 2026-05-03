@@ -251,27 +251,8 @@ async function buyPlan(plan) {
       name: "ModSafe",
       description: plan + " plan purchase",
       order_id: order.id,
-
-      handler: async function(response) {
-        const verifyRes = await fetch("/verify-payment", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey
-          },
-          body: JSON.stringify({ ...response, plan })
-        });
-
-        const data = await verifyRes.json();
-
-        if (data.success) {
-          localStorage.setItem("plan", data.plan || plan);
-          alert("Payment successful!");
-          window.location.href = "index.html";
-        } else {
-          alert(data.error || "Payment verification failed");
-        }
-      }
+      callback_url: `${window.location.origin}/razorpay-callback`,
+      redirect: true
     };
 
     const rzp = new Razorpay(options);

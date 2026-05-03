@@ -736,6 +736,11 @@ const db = {
     );
   },
 
+  async updateUserPlanByApiKeyHash(apiKeyHash, plan) {
+    await dbReady;
+    await pool.query(`UPDATE users SET plan = $1 WHERE apikey_hash = $2`, [plan, apiKeyHash]);
+  },
+
   async updateCustomWords(apiKey, wordsArray) {
     await dbReady;
     await pool.query(`UPDATE users SET customwords = $1 WHERE apikey = $2`, [JSON.stringify(wordsArray), apiKey]);
@@ -1324,6 +1329,7 @@ app.use((err, req, res, next) => {
 app.post("/create-order", async (req, res) => {
   try {
     const { plan } = req.body;
+    const apiKey = req.headers["x-api-key"] || req.body.apiKey;
 
     const prices = {
       starter: 29900,
@@ -1336,12 +1342,22 @@ app.post("/create-order", async (req, res) => {
         error: "Invalid plan"
       });
     }
+    if (!apiKey) {
+      return res.status(401).json({ error: "Login required before payment" });
+    }
 
+    const user = await getUserByApiKey(apiKey);
+    if (!user) {
+      return res.status(401).json({ error: "Invalid account session" });
+    }
+    const apiKeyHash = getApiKeyHash(apiKey);
     const order = await razorpay.orders.create({
       amount: prices[plan],
       currency: "INR",
       notes: {
-        plan
+        plan,
+        apiKeyHash,
+        username: user.username
       }
     });
 
@@ -1358,48 +1374,63 @@ app.post("/create-order", async (req, res) => {
   }
 });
 
+async function verifyRazorpayPaymentAndActivate(body, apiKey = null) {
+  const {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature
+  } = body;
+
+  const generatedSignature = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .update(razorpay_order_id + "|" + razorpay_payment_id)
+    .digest("hex");
+
+  if (generatedSignature !== razorpay_signature) {
+    return { success: false, error: "Payment signature mismatch" };
+  }
+
+  const order = await razorpay.orders.fetch(razorpay_order_id);
+  const selectedPlan = String(body.plan || order?.notes?.plan || "").trim().toLowerCase();
+  if (!["starter", "growth", "scale"].includes(selectedPlan)) {
+    return { success: false, error: "Invalid plan" };
+  }
+
+  if (apiKey) {
+    await db.updateUserPlan(apiKey, selectedPlan);
+  } else if (order?.notes?.apiKeyHash) {
+    await db.updateUserPlanByApiKeyHash(order.notes.apiKeyHash, selectedPlan);
+  } else {
+    return { success: false, error: "Could not find account for payment" };
+  }
+
+  return { success: true, plan: selectedPlan };
+}
+
 app.post("/verify-payment", async (req, res) => {
   try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      plan
-    } = req.body;
-
-    const generatedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(
-        razorpay_order_id + "|" + razorpay_payment_id
-      )
-      .digest("hex");
-
-    if (generatedSignature !== razorpay_signature) {
-      return res.status(400).json({
-        success: false
-      });
-    }
-
-    const selectedPlan = String(plan || "").trim().toLowerCase();
-    if (selectedPlan && !["starter", "growth", "scale"].includes(selectedPlan)) {
-      return res.status(400).json({ success: false, error: "Invalid plan" });
-    }
-
-    const apiKey = req.headers["x-api-key"] || req.body.apiKey;
-    if (apiKey && selectedPlan) {
-      await db.updateUserPlan(apiKey, selectedPlan);
-    }
-
-    res.json({
-      success: true,
-      plan: selectedPlan || null
-    });
+    const apiKey = req.headers["x-api-key"] || req.body.apiKey || null;
+    const result = await verifyRazorpayPaymentAndActivate(req.body, apiKey);
+    res.status(result.success ? 200 : 400).json(result);
 
   } catch (err) {
     console.error(err);
     res.status(500).json({
       success: false
     });
+  }
+});
+
+app.post("/razorpay-callback", async (req, res) => {
+  try {
+    const result = await verifyRazorpayPaymentAndActivate(req.body);
+    if (!result.success) {
+      return res.redirect(`/pricing.html?payment=failed&reason=${encodeURIComponent(result.error || "verification")}`);
+    }
+    res.redirect(`/index.html?payment=success&plan=${encodeURIComponent(result.plan)}`);
+  } catch (err) {
+    console.error(err);
+    res.redirect("/pricing.html?payment=failed&reason=server");
   }
 });
 
